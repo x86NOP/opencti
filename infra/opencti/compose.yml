@@ -146,7 +146,6 @@ services:
       - SMTP_REJECT_UNAUTHORIZED=${SMTP_REJECT_UNAUTHORIZED}
       - PROVIDERS__LOCAL__STRATEGY=LocalStrategy
     healthcheck:
-#      test: "wget -qO- http://opencti:8080/health?health_access_key=${OPENCTI_HEALTHCHECK_KEY} | grep success || exit 1"
       test:  ["CMD", "wget", "-qO-", "http://opencti:8080/health?health_access_key=${OPENCTI_HEALTHCHECK_KEY}"]
       start_period: 60s
       start_interval: 60s
@@ -294,6 +293,7 @@ services:
     image: nginx:${IMAGE_TAG_NGINX}
     restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
     volumes:
+      # Uncomment to enable SSL certificates (first generate certs using ./reverse-proxy/ssl/localhost.sh)
       #- ./reverse-proxy/ssl:/etc/ssl/app:ro
       - ./reverse-proxy/html:/usr/share/nginx/html:ro
       - ./reverse-proxy/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -324,9 +324,8 @@ services:
       connector-analysis:
         condition: service_started
     healthcheck:
-      # If hostname is not `localhost` then external name resolution is required (e.g. /etc/hosts) or extra args to specify host header
-      #test: "curl -fsSL http://${NGINX_HOSTNAME}:8080/healthcheck -o /dev/null || exit 1"
-      test: "curl -fskSL https://${NGINX_HOSTNAME}:8443/healthcheck -o /dev/null || exit 1"
+      test: "curl -fsSL http://localhost:80/healthcheck -o /dev/null || exit 1"
+      #test: "curl -fskSL https://localhost:443/healthcheck -o /dev/null || exit 1"
       start_period: 10s
       start_interval: 15s
       interval: 60s
