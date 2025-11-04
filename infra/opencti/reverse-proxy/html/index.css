@@ -1,0 +1,29 @@
+:root {
+  /* Black & Gold Elegance */
+  /* https://coolors.co/palette/000000-14213d-fca311-e5e5e5-ffffff */
+  --color-background: #000000ff; /* black */
+  --color-dark: #14213dff;       /* oxford-blue */
+  --color-highlight: #fca311ff;  /* orange-web */
+  --color-text: #e5e5e5ff;       /* platinum */
+  --color-bright: #ffffffff;     /* white */
+
+  /* Golden Twilight */
+  /* https://coolors.co/palette/000814-001d3d-003566-ffc300-ffd60a */
+  /*--rich-black: #000814ff;    /* rich-black */
+  /*--oxford-blue: #001d3dff;   /* oxford-blue */
+  /*--yale-blue: #003566ff;     /* yale-blue */
+  /*--mikado-yellow: #ffc300ff; /* mikado-yellow */
+  /*--gold: #ffd60aff;          /* gold */
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  text-align: center;
+  padding: 50px;
+}
+
+h1 {
+  color: var(--color-highlight);
+}

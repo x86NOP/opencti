@@ -1,0 +1,374 @@
+services:
+  redis:
+    image: redis:${IMAGE_TAG_REDIS}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    volumes:
+      - redisdata:/data
+    networks:
+      - backend
+    healthcheck:
+      test: "[ $$(redis-cli ping) = 'PONG' ]"
+      start_period: 15s
+      start_interval: 15s
+      interval: 60s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${IMAGE_TAG_ELASTICSEARCH}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    networks:
+      - backend
+    environment:
+      - discovery.type=single-node
+      - xpack.ml.enabled=false
+      - xpack.security.enabled=false
+      - thread_pool.search.queue_size=5000
+      - logger.org.elasticsearch.discovery="ERROR"
+      - "ES_JAVA_OPTS=-Xms${ELASTICSEARCH_MEMORY_SIZE} -Xmx${ELASTICSEARCH_MEMORY_SIZE}"
+    healthcheck:
+      test: "curl -fsSL http://localhost:9200/_cat/health -o /dev/null || exit 1"
+      start_period: 30s
+      start_interval: 30s
+      interval: 60s
+      timeout: 5s
+      retries: 10
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  minio:
+    image: minio/minio:${IMAGE_TAG_MINIO}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    volumes:
+      - s3data:/data
+    networks:
+      - backend
+#    ports:
+#      # Login to console web interface using root credentials from .env
+#      - "${MINIO_S3_PORT}:${MINIO_S3_PORT}" # Exposes S3 protocol for direct object access
+#      - "${MINIO_CONSOLE_PORT}:${MINIO_CONSOLE_PORT}" # Exposes console web interface (port set below in 'command')
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      #- MINIO_SERVER_URL=
+      #- MINIO_BROWSER_REDIRECT_URL=
+    command: server /data --address ":${MINIO_S3_PORT}" --console-address ":${MINIO_CONSOLE_PORT}"
+    healthcheck:
+      test: "curl -fsSL http://minio:${MINIO_S3_PORT}/minio/health/live -o /dev/null || exit 1"
+      start_period: 15s
+      start_interval: 15s
+      interval: 60s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:${IMAGE_TAG_RABBITMQ}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    volumes:
+      - amqpdata:/var/lib/rabbitmq
+    networks:
+      - backend
+      - app
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+      - RABBITMQ_NODENAME=rabbitmq@localhost
+    healthcheck:
+      test: "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms || exit 1"
+      start_period: 30s
+      start_interval: 15s
+      interval: 60s
+      timeout: 5s
+      retries: 10
+
+  opencti:
+    image: opencti/platform:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    volumes:
+      - applogs:/var/log/opencti
+    networks:
+      - backend
+      - app
+    # Uncomment to expose OpenCTI app port directly (not recommended, use reverse proxy instead)
+    #ports:
+    #  - "8080:8080"
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=8096
+      - APP__PORT=8080
+      - APP__BASE_URL=${OPENCTI_BASE_URL}
+      - APP__BASE_PATH=${OPENCTI_BASE_PATH}
+      - APP__ADMIN__EMAIL=${OPENCTI_ADMIN_EMAIL}
+      - APP__ADMIN__PASSWORD=${OPENCTI_ADMIN_PASSWORD}
+      - APP__ADMIN__TOKEN=${OPENCTI_ADMIN_TOKEN}
+      - APP__APP_LOGS__LOGS_LEVEL=info
+      - APP__APP_LOGS__LOGS_CONSOLE=true
+      - APP__APP_LOGS__LOGS_FILES=true
+      - APP__APP_LOGS__LOGS_MAX_FILES=30
+      - APP__APP_LOGS__LOGS_DIRECTORY=/var/log/opencti/app
+      - APP__AUDIT_LOGS__LOGS_CONSOLE=true
+      - APP__AUDIT_LOGS__LOGS_FILES=true
+      - APP__AUDIT_LOGS__LOGS_MAX_FILES=30
+      - APP__AUDIT_LOGS__LOGS_DIRECTORY=/var/log/opencti/audit
+      - APP__GRAPHQL__PLAYGROUND__ENABLED=false
+      - APP__REQUEST_TIMEOUT=1200000 # Milliseconds (default=1200000 / 20 minutes)
+      - APP__SESSION_TIMEOUT=1200000 # Milliseconds (default=1200000 / 20 minutes)
+      - APP__SESSION_IDLE_TIMEOUT=36000000 # Milliseconds (default=0 / disabled)
+      - APP__SESSION_COOKIE=true
+      - APP__ARTIFACT_ZIP_PASSWORD=${OPENCTI_ZIP_PASSWORD}
+      - APP__HEALTH_ACCESS_KEY=${OPENCTI_HEALTHCHECK_KEY}
+      - APP__PUBLIC_DASHBOARD_AUTHORIZED_DOMAINS=${OPENCTI_PUBLIC_DASHBOARD_DOMAINS}
+      - REDIS__HOSTNAME=redis
+      - REDIS__PORT=6379
+      - ELASTICSEARCH__URL=http://elasticsearch:9200
+      - MINIO__ENDPOINT=minio
+      - MINIO__PORT=${MINIO_S3_PORT}
+      - MINIO__USE_SSL=false
+      - MINIO__ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO__SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - RABBITMQ__HOSTNAME=rabbitmq
+      - RABBITMQ__PORT=5672
+      - RABBITMQ__PORT_MANAGEMENT=15672
+      - RABBITMQ__MANAGEMENT_SSL=false
+      - RABBITMQ__USERNAME=${RABBITMQ_USER}
+      - RABBITMQ__PASSWORD=${RABBITMQ_PASSWORD}
+      - SMTP__HOSTNAME=${SMTP_HOSTNAME}
+      - SMTP__PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_USE_SSL=${SMTP_USE_SSL}
+      - SMTP_REJECT_UNAUTHORIZED=${SMTP_REJECT_UNAUTHORIZED}
+      - PROVIDERS__LOCAL__STRATEGY=LocalStrategy
+    healthcheck:
+#      test: "wget -qO- http://opencti:8080/health?health_access_key=${OPENCTI_HEALTHCHECK_KEY} | grep success || exit 1"
+      test:  ["CMD", "wget", "-qO-", "http://opencti:8080/health?health_access_key=${OPENCTI_HEALTHCHECK_KEY}"]
+      start_period: 60s
+      start_interval: 60s
+      interval: 60s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    image: opencti/worker:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${OPENCTI_ADMIN_TOKEN}
+      - WORKER_LOG_LEVEL=info
+    depends_on:
+      opencti:
+        condition: service_healthy
+    deploy:
+      mode: replicated
+      replicas: 3
+
+  connector-export-file-stix:
+    image: opencti/connector-export-file-stix:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${CONNECTOR_EXPORT_FILE_STIX_TOKEN}
+      - CONNECTOR_ID=${CONNECTOR_EXPORT_FILE_STIX_ID}
+      - CONNECTOR_TYPE=INTERNAL_EXPORT_FILE
+      - CONNECTOR_NAME=ExportFileStix2
+      - CONNECTOR_SCOPE=application/json
+      - CONNECTOR_LOG_LEVEL=info
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+  connector-export-file-csv:
+    image: opencti/connector-export-file-csv:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${CONNECTOR_EXPORT_FILE_CSV_TOKEN}
+      - CONNECTOR_ID=${CONNECTOR_EXPORT_FILE_CSV_ID}
+      - CONNECTOR_TYPE=INTERNAL_EXPORT_FILE
+      - CONNECTOR_NAME=ExportFileCsv
+      - CONNECTOR_SCOPE=text/csv
+      - CONNECTOR_LOG_LEVEL=info
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+  connector-export-file-txt:
+    image: opencti/connector-export-file-txt:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${CONNECTOR_EXPORT_FILE_TXT_TOKEN}
+      - CONNECTOR_ID=${CONNECTOR_EXPORT_FILE_TXT_ID}
+      - CONNECTOR_TYPE=INTERNAL_EXPORT_FILE
+      - CONNECTOR_NAME=ExportFileTxt
+      - CONNECTOR_SCOPE=text/plain
+      - CONNECTOR_LOG_LEVEL=info
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+  connector-import-file-stix:
+    image: opencti/connector-import-file-stix:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${CONNECTOR_IMPORT_FILE_STIX_TOKEN}
+      - CONNECTOR_ID=${CONNECTOR_IMPORT_FILE_STIX_ID}
+      - CONNECTOR_TYPE=INTERNAL_IMPORT_FILE
+      - CONNECTOR_NAME=ImportFileStix
+      - CONNECTOR_VALIDATE_BEFORE_IMPORT=true
+      - CONNECTOR_SCOPE=application/json,text/xml
+      - CONNECTOR_AUTO=true
+      - CONNECTOR_LOG_LEVEL=info
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+  connector-import-document:
+    image: opencti/connector-import-document:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${CONNECTOR_IMPORT_DOCUMENT_TOKEN}
+      - CONNECTOR_ID=${CONNECTOR_IMPORT_DOCUMENT_ID}
+      - CONNECTOR_TYPE=INTERNAL_IMPORT_FILE
+      - CONNECTOR_NAME=ImportDocument
+      - CONNECTOR_VALIDATE_BEFORE_IMPORT=true
+      - CONNECTOR_SCOPE=application/pdf,text/plain,text/html
+      - CONNECTOR_AUTO=true
+      - CONNECTOR_ONLY_CONTEXTUAL=false
+      - CONNECTOR_LOG_LEVEL=info
+      - IMPORT_DOCUMENT_CREATE_INDICATOR=true
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+  connector-analysis:
+    image: opencti/connector-import-document:${IMAGE_TAG_OPENCTI}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    networks:
+      - app
+    environment:
+      - OPENCTI_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_TOKEN=${CONNECTOR_ANALYSIS_TOKEN}
+      - CONNECTOR_ID=${CONNECTOR_ANALYSIS_ID}
+      - CONNECTOR_TYPE=INTERNAL_ANALYSIS
+      - CONNECTOR_NAME=ImportDocumentAnalysis
+      - CONNECTOR_VALIDATE_BEFORE_IMPORT=false
+      - CONNECTOR_SCOPE=application/pdf,text/plain,text/html
+      - CONNECTOR_AUTO=true
+      - CONNECTOR_ONLY_CONTEXTUAL=false
+      - CONNECTOR_LOG_LEVEL=info
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+  reverse-proxy:
+    image: nginx:${IMAGE_TAG_NGINX}
+    restart: ${OPENCTI_CONTAINER_RESTART:-unless-stopped}
+    volumes:
+      #- ./reverse-proxy/ssl:/etc/ssl/app:ro
+      - ./reverse-proxy/html:/usr/share/nginx/html:ro
+      - ./reverse-proxy/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - proxylogs:/var/log/nginx
+    networks:
+      - frontend
+      - app
+    ports:
+      - "${NGINX_EXTERNAL_HTTP_PORT}:80"
+      - "${NGINX_EXTERNAL_HTTPS_PORT}:443"
+    environment:
+      - NGINX_HOSTNAME=${NGINX_HOSTNAME}
+      - OPENCTI_BASE_URL=${OPENCTI_BASE_URL}
+      - OPENCTI_BASE_PATH=${OPENCTI_BASE_PATH}
+    depends_on:
+      opencti:
+        condition: service_healthy
+      connector-export-file-stix:
+        condition: service_started
+      connector-export-file-csv:
+        condition: service_started
+      connector-export-file-txt:
+        condition: service_started
+      connector-import-file-stix:
+        condition: service_started
+      connector-import-document:
+        condition: service_started
+      connector-analysis:
+        condition: service_started
+    healthcheck:
+      # If hostname is not `localhost` then external name resolution is required (e.g. /etc/hosts) or extra args to specify host header
+      #test: "curl -fsSL http://${NGINX_HOSTNAME}:8080/healthcheck -o /dev/null || exit 1"
+      test: "curl -fskSL https://${NGINX_HOSTNAME}:8443/healthcheck -o /dev/null || exit 1"
+      start_period: 10s
+      start_interval: 15s
+      interval: 60s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  esdata:
+    driver: local
+    labels:
+      description: "Elasticsearch data"
+  s3data:
+    driver: local
+    labels:
+      description: "S3/MinIO data"
+  redisdata:
+    driver: local
+    labels:
+      description: "Redis data"
+  amqpdata:
+    driver: local
+    labels:
+      description: "Rabbitmq data"
+  applogs:
+    driver: local
+    labels:
+      description: "OpenCTI app logs"
+  proxylogs:
+    driver: local
+    labels:
+      description: "Nginx reverse proxy logs"
+
+networks:
+  frontend:
+    driver: bridge
+    labels:
+      description: "Frontend services (e.g. reverse proxy)"
+  app:
+    driver: bridge
+    labels:
+      description: "Application services (e.g. web server, connectors)"
+  backend:
+    driver: bridge
+    labels:
+      description: "Backend services (e.g. database, storage)"

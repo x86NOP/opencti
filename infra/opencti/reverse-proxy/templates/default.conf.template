@@ -1,0 +1,93 @@
+# Return empty error for all unknown requests
+# NOTE: Helps prevent DNS enumeration attacks by requiring host header 
+#       in all requests to match a defined server_name.
+server {
+  listen 80 default_server;
+  server_name _;
+
+  set $empty "";
+  return 444;
+}
+
+# HTTP - OpenCTI Application and Services
+server {
+  listen          80;
+  server_name     ${NGINX_HOSTNAME} localhost;
+
+  location ${OPENCTI_BASE_PATH} {
+    proxy_cache                     off;
+    proxy_buffering                 off;
+    proxy_http_version              1.1;
+    proxy_set_header                Upgrade $http_upgrade;
+    proxy_set_header                Connection "upgrade";
+    proxy_set_header                Host $host;
+    chunked_transfer_encoding       off;
+    proxy_pass                      ${OPENCTI_BASE_URL};
+  }
+
+  location = /healthcheck {
+    add_header Content-Type text/plain;
+    return 200 "${NGINX_HOSTNAME} OK";
+  }
+}
+
+# HTTPS - OpenCTI Application and Services
+# NOTE: Before enabling, generate certs using /certs/localhost.sh or customize for your domain.
+#server {
+#  listen          443 ssl;
+#  server_name     ${NGINX_HOSTNAME} localhost;
+#
+#  ssl_certificate         /etc/ssl/app/localhost.crt;
+#  ssl_certificate_key     /etc/ssl/app/localhost.key;
+#
+#  location ${OPENCTI_BASE_PATH} {
+#    proxy_cache                     off;
+#    proxy_buffering                 off;
+#    proxy_http_version              1.1;
+#    proxy_set_header                Upgrade $http_upgrade;
+#    proxy_set_header                Connection "upgrade";
+#    proxy_set_header                Host $host;
+#    chunked_transfer_encoding       off;
+#    proxy_pass                      ${OPENCTI_BASE_URL};
+#  }
+#
+#  location ~* \.(env|conf)$ {
+#    deny all;
+#  }
+#
+#  location = /healthcheck {
+#    add_header Content-Type text/plain;
+#    return 200 "${NGINX_HOSTNAME} OK";
+#  }
+#}
+
+# HTTP Static Content
+# Generic server in case no other server is defined/listening.
+# Enable for testing/debugging connectivity.
+#server {
+#  listen          80;
+#  server_name     ${NGINX_HOSTNAME} localhost;
+#    
+#  location / {
+#    client_max_body_size 1M;
+#    root /usr/share/nginx/html;
+#    index index.html;
+#    expires 1d;
+#  }
+#
+#  location ~* \.(env|conf)$ {
+#    deny all;
+#  }
+#
+#  location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+#    add_header Cache-Control "public";
+#    root /usr/share/nginx/html;
+#    access_log off;
+#    expires 30d;
+#  }
+#
+#  location = /healthcheck {
+#    add_header Content-Type text/plain;
+#    return 200 "${NGINX_HOSTNAME} OK";
+#  }
+#}

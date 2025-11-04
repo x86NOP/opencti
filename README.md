@@ -1,2 +1,13 @@
-# opencti
-OpenCTI infra, configs, code, docs
+# OpenCTI
+
+## Infrastructure
+
+TODO
+
+## Connectors
+
+TODO
+
+## Documentation
+
+TODO
